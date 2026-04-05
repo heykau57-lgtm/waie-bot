@@ -1,27 +1,95 @@
 {
   "version": 2,
   "builds": [
-    { "src": "api/index.js", "use": "@vercel/node" },
-    { "src": "public/**/*.html", "use": "@vercel/static" },
-    { "src": "index.html", "use": "@vercel/static" }
+    {
+      "src": "api/index.js",
+      "use": "@vercel/node"
+    },
+    {
+      "src": "public/**/*.html",
+      "use": "@vercel/static"
+    },
+    {
+      "src": "public/tools/**/*.html",
+      "use": "@vercel/static"
+    },
+    {
+      "src": "index.html",
+      "use": "@vercel/static"
+    }
   ],
   "routes": [
-    { "src": "/api/(.*)", "dest": "/api/index.js" },
-    { "src": "/login", "dest": "/public/login.html" },
-    { "src": "/dashboard", "dest": "/public/dashboard.html" },
-    { "src": "/user-management", "dest": "/public/user-management.html" },
-    { "src": "/my-senders", "dest": "/public/my-senders.html" },
-    { "src": "/profile", "dest": "/public/profile.html" },
-    { "src": "/execution", "dest": "/public/execution.html" },
-    { "src": "/anime", "dest": "/public/anime.html" },
-    { "src": "/my-support", "dest": "/public/my-support.html" },
-    { "src": "/pinterest-downloader", "dest": "/public/pinterest-downloader.html" },
-    { "src": "/tiktok-downloader", "dest": "/public/tiktok-downloader.html" },
-    { "src": "/youtube-downloader", "dest": "/public/youtube-downloader.html" },
-    { "src": "/speed-test", "dest": "/public/speed-test.html" },
-    { "src": "/nsfw-generator", "dest": "/public/nsfw-generator.html" },
-    { "src": "/whatsapp-bug", "dest": "/public/whatsapp-bug.html" },
-    { "src": "/(.*)\\.html", "dest": "/public/$1.html" },
-    { "src": "/", "dest": "/public/login.html" }
+    {
+      "src": "/api/(.*)",
+      "dest": "/api/index.js"
+    },
+    {
+      "src": "/login",
+      "dest": "/public/login.html"
+    },
+    {
+      "src": "/dashboard",
+      "dest": "/public/dashboard.html"
+    },
+    {
+      "src": "/user-management",
+      "dest": "/public/user-management.html"
+    },
+    {
+      "src": "/my-senders",
+      "dest": "/public/my-senders.html"
+    },
+    {
+      "src": "/profile",
+      "dest": "/public/profile.html"
+    },
+    {
+      "src": "/execution",
+      "dest": "/public/execution.html"
+    },
+    {
+      "src": "/anime",
+      "dest": "/public/anime.html"
+    },
+    {
+      "src": "/my-support",
+      "dest": "/public/my-support.html"
+    },
+    {
+      "src": "/tools/pinterest",
+      "dest": "/public/tools/pinterest.html"
+    },
+    {
+      "src": "/tools/speedtest",
+      "dest": "/public/tools/speedtest.html"
+    },
+    {
+      "src": "/tools/tiktok",
+      "dest": "/public/tools/tiktok.html"
+    },
+    {
+      "src": "/tools/youtube",
+      "dest": "/public/tools/youtube.html"
+    },
+    {
+      "src": "/tools/nsfw",
+      "dest": "/public/tools/nsfw.html"
+    },
+    {
+      "src": "/tools/osint",
+      "dest": "/public/tools/osint.html"
+    },
+    {
+      "src": "/(.*)\\.html",
+      "dest": "/public/$1.html"
+    },
+    {
+      "src": "/",
+      "dest": "/index.html"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/api/index.js"
+    }
   ]
 }
