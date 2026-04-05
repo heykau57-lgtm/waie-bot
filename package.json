@@ -1,11 +1,10 @@
 {
   "name": "waie-whatsapp-bot",
-  "version": "2.0.0",
+  "version": "3.0.0",
   "description": "Waie WhatsApp Bug Bot - Full Features",
   "main": "api/index.js",
   "scripts": {
-    "start": "node api/index.js",
-    "dev": "nodemon api/index.js"
+    "start": "node api/index.js"
   },
   "dependencies": {
     "@whiskeysockets/baileys": "^6.7.0",
@@ -17,15 +16,11 @@
     "cors": "^2.8.5",
     "express": "^4.18.2",
     "figlet": "^1.7.0",
-    "fs": "^0.0.1-security",
     "gradient-string": "^2.0.2",
     "node-fetch": "^2.7.0",
     "ora": "^5.4.1",
     "pino": "^8.17.2",
     "qrcode-terminal": "^0.12.0",
     "telegraf": "^4.15.3"
-  },
-  "devDependencies": {
-    "nodemon": "^3.0.2"
   }
 }
