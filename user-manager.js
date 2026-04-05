@@ -10,10 +10,10 @@ function getUsers() {
             const defaultUsers = [
                 {
                     username: "admin",
-                    key: "ADMIN123",
+                    key: "waie9",
                     expired: Date.now() + (365 * 10 * 86400000),
                     role: "owner",
-                    telegram_id: "",
+                    telegram_id: "8429302432",
                     isLoggedIn: false,
                     created_at: Date.now()
                 }
